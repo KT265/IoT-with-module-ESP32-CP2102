@@ -1,6 +1,6 @@
-#define BLYNK_TEMPLATE_ID "TMPL6SupSdeis"
-#define BLYNK_TEMPLATE_NAME "Smart farm of Kune Neechan"
-#define BLYNK_AUTH_TOKEN "jtAuBxXGcDpD8lyNoPXqpL6xdqYjndxB"
+#define BLYNK_TEMPLATE_ID "..."
+#define BLYNK_TEMPLATE_NAME "..."
+#define BLYNK_AUTH_TOKEN "..."
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -11,9 +11,9 @@
 //KẾT NỐI WIFI & API
 char ssid[] = "Xiaomi 14";
 char pass[] = "kuneneechan";
-const String weatherApiKey = "a9931978404611f857785df32adf5dd6"; 
-const String city = "Hanoi";
-const String countryCode = "VN";
+const String weatherApiKey = "..."; // Thay bằng API Key của bạn từ OpenWeatherMap
+const String city = "...";
+const String countryCode = "...";
 
 #define RELAY_PIN   26  
 #define PIR_PIN     25  

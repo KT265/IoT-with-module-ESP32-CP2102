@@ -1,6 +1,0 @@
-Cám biến độ ẩm đất vcc-3v3/ GND-GND/ AO-GPIO34
-Cảm biến ánh sáng(LDR) vcc-3v3/ GND-GND/ A0-GPIO35
-DHT11 (nhiệt/ẩm) VCC-3v3/ GND=GND/ DATA-GPIO4
-PIR(chuyển động) VCC-VIN(5V)/ GND-GND/ OUT-GPIO13
-RELAY DC+ -VIN(5V)/ DC- -GND/ IN-GPIO12, nguồn ngoài vào COM
-MOTOR 1 dây vào No, 1 dây vào GND nguồn ngoài.
