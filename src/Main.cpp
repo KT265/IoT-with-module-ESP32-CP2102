@@ -8,9 +8,9 @@
 #include <BlynkSimpleEsp32.h>
 #include <DHT.h>
 
-// ================= KẾT NỐI WIFI & API =================
-char ssid[] = "Yêu Không Mà Hỏi";
-char pass[] = "thichhoikhong";
+//KẾT NỐI WIFI & API
+char ssid[] = "Xiaomi 14";
+char pass[] = "kuneneechan";
 const String weatherApiKey = "a9931978404611f857785df32adf5dd6"; 
 const String city = "Hanoi";
 const String countryCode = "VN";
@@ -21,11 +21,12 @@ const String countryCode = "VN";
 #define DHT_PIN     15  
 #define LDR_PIN     34   
 
+#define PUMP_ERROR_VPIN V7
 #define DHTTYPE DHT11
 DHT dht(DHT_PIN, DHTTYPE);
 BlynkTimer timer;
 
-// ================= BIẾN TOÀN CỤC =================
+//BIẾN TOÀN CỤC
 float t = 0.0, h = 0.0;
 int soilPercent = 0, ldrValue = 0, pirValue = 0;
 int autoMode = 1; 
@@ -39,15 +40,14 @@ int targetThreshold = 60;  // Ngưỡng đủ ẩm để dừng bơm (60%)
 int pumpState = 0; // 0: Nghỉ, 1: Đang Bơm, 2: Chờ nước ngấm, 3: Lỗi ngập úng
 unsigned long pumpCycleStart = 0;
 int currentCycle = 0;
-const int MAX_CYCLES = 5;         // Tối đa 5 chu kỳ bơm, nếu vẫn khô -> Lỗi cảm biến
+const int MAX_CYCLES = 5;         // Tối đa 5 chu kỳ bơm
 const int PUMP_TIME_MS = 5000;    // Bơm 5 giây
 const int ABSORB_TIME_MS = 5000;  // Chờ ngấm 5 giây
 
-// ================= HÀM 1: LẤY DỰ BÁO THỜI TIẾT (3-6H TỚI) =================
+//HÀM 1: LẤY DỰ BÁO THỜI TIẾT (3-6H TỚI)
 void fetchWeatherForecast() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    // Trick lỏ: cnt=2 chỉ lấy 2 kết quả tiếp theo (khoảng 6 tiếng) để đỡ tốn RAM
     String url = "http://api.openweathermap.org/data/2.5/forecast?q=" + city + "," + countryCode + "&cnt=2&appid=" + weatherApiKey + "&units=metric";
     
     http.begin(url);
@@ -59,7 +59,6 @@ void fetchWeatherForecast() {
       deserializeJson(doc, payload);
       
       willRainSoon = false;
-      // Check 2 mốc thời gian tiếp theo
       for (int i = 0; i < 2; i++) {
         String weather = doc["list"][i]["weather"][0]["main"];
         if (weather == "Rain" || weather == "Thunderstorm" || weather == "Drizzle") {
@@ -73,12 +72,12 @@ void fetchWeatherForecast() {
   }
 }
 
-// ================= HÀM 2: ĐỌC CẢM BIẾN & IN TERMINAL (2s/lần) =================
+//HÀM 2: ĐỌC CẢM BIẾN & IN TERMINAL (2s/lần)
 void readSensorsAndDebug() {
   t = dht.readTemperature();
   h = dht.readHumidity();
   
-  if (isnan(t) || isnan(h)) { t = 0; h = 0; } // Chống lỗi nan
+  if (isnan(t) || isnan(h)) { t = 0; h = 0; }
 
   ldrValue = analogRead(LDR_PIN);
   pirValue = digitalRead(PIR_PIN);
@@ -95,18 +94,19 @@ void readSensorsAndDebug() {
   // Tính toán ngưỡng động (Trọng số môi trường)
   // Nóng > 32 độ, độ ẩm < 50%, ánh sáng gắt (< 2000) -> Tăng ngưỡng bơm (Bơm sớm hơn)
   if (t > 32.0 && h < 50.0 && ldrValue < 2000) {
-    triggerThreshold = 55; // Cây mất nước nhanh, 55% là phải bơm rồi
-    Serial.println("[AI Logic] Troi rat nong va hanh -> TANG MUC UU TIEN TUOI!");
+    triggerThreshold = 55;
+    Serial.println("[SAI Logic] Troi rat nong va hanh -> TANG MUC UU TIEN TUOI!");
   } else {
-    triggerThreshold = 40; // Trở về mức bình thường
+    triggerThreshold = 40;
   }
 }
 
-// ================= HÀM 3: LOGIC BƠM "NÃO TO" (2s/lần) =================
+//HÀM 3: LOGIC BƠM (2s/lần)
 void handleAutoMode() {
   if (autoMode == 0) {
-    // Nếu đang Manual, reset trạng thái bơm
-    pumpState = 0; currentCycle = 0; digitalWrite(RELAY_PIN, LOW);
+    pumpState = 0; 
+    currentCycle = 0; 
+    Blynk.virtualWrite(PUMP_ERROR_VPIN, 0); // Reset đèn báo lỗi khi chuyển sang Manual
     return;
   }
 
@@ -127,7 +127,15 @@ void handleAutoMode() {
     return;
   }
 
-  // 2. STATE MACHINE BƠM NHẤP NHẢ (PULSE PUMPING)
+  if (pumpState == 3) {
+    // Trạng thái LỖI: Đã bơm 5 lần mà đất vẫn khô
+    digitalWrite(RELAY_PIN, LOW);
+    Blynk.virtualWrite(V0, 0);
+    Blynk.virtualWrite(PUMP_ERROR_VPIN, 1); // BẬT ĐÈN BÁO LỖI TRÊN APP
+    return; // Dừng mọi hoạt động bơm tự động cho đến khi reset
+  }
+
+  // 2. STATE MACHINE BƠM NHẤP NHẢ 
   if (soilPercent < triggerThreshold && pumpState == 0) {
     Serial.println("[Auto] Dat kho. BAT DAU CHU TRINH TUOI!");
     pumpState = 1; 
@@ -143,7 +151,7 @@ void handleAutoMode() {
       Blynk.virtualWrite(V0, 0);
       pumpState = 2; // Chuyển sang pha chờ ngấm
       pumpCycleStart = millis();
-      Serial.printf("[Auto] Chu ky %d: Nghia bom, cho nuoc ngam...\n", currentCycle);
+      Serial.printf("[Auto] Chu ky %d: Nghung bom, cho nuoc ngam...\n", currentCycle);
     }
   }
   
@@ -151,13 +159,16 @@ void handleAutoMode() {
     if (millis() - pumpCycleStart >= ABSORB_TIME_MS) {
       if (soilPercent >= targetThreshold) {
         pumpState = 0; currentCycle = 0;
+        Blynk.virtualWrite(PUMP_ERROR_VPIN, 0); // Xóa lỗi nếu thành công
         Serial.println("[Auto] Thanh cong! Dat da am.");
       } else if (currentCycle >= MAX_CYCLES) {
-        pumpState = 3; // Lỗi
-        Serial.println("[Auto] LOI: Bom 5 lan ma dat van kho -> Kiem tra cam bien/he thong nuoc!");
-        Blynk.logEvent("pump_error", "Cảnh báo: Bơm liên tục nhưng đất vẫn khô!");
+        pumpState = 3; // CHÍNH THỨC BÁO LỖI
+        Serial.println("[Auto] !!! LOI NGUY HIEM: Bom 5 lan van kho !!!");
+        Blynk.logEvent("pump_error", "Cảnh báo: Bơm 5 lần thất bại. Kiểm tra nguồn nước ngay!");
+        Blynk.virtualWrite(PUMP_ERROR_VPIN, 1); 
       } else {
-        pumpState = 1; // Bơm tiếp chu kỳ mới
+        // ... (tiếp tục bơm chu kỳ mới) ...
+        pumpState = 1;
         currentCycle++;
         digitalWrite(RELAY_PIN, HIGH);
         Blynk.virtualWrite(V0, 1);
@@ -168,39 +179,40 @@ void handleAutoMode() {
   }
 }
 
-// ================= HÀM 4: GỬI DATA LÊN BLYNK (5 phút/lần) =================
+//HÀM 4: GỬI DATA LÊN BLYNK (5 phút/lần)
 void sendToBlynk() {
   Blynk.virtualWrite(V2, t);
   Blynk.virtualWrite(V3, h);
-  Blynk.virtualWrite(V5, (ldrValue < 2000) ? 1 : 0); // 1 Sáng, 0 Tối
-  Blynk.virtualWrite(V6, pirValue);
+  Blynk.virtualWrite(V5, (ldrValue < 2000) ? 1 : 0);
   Serial.println("[Blynk] Da dong bo du lieu len Cloud.");
 }
-void sendSoiltoBlynk(){
+void sendSoilandPirtoBlynk(){
     Blynk.virtualWrite(V4, soilPercent);
+    Blynk.virtualWrite(V6, pirValue);
 }
 
-// ================= ĐIỀU KHIỂN TỪ APP =================
+//ĐIỀU KHIỂN TỪ APP
 BLYNK_WRITE(V0) { if (autoMode == 0) digitalWrite(RELAY_PIN, param.asInt()); }
-BLYNK_WRITE(V1) { autoMode = param.asInt(); }
-
-// ================= SETUP & LOOP =================
+BLYNK_WRITE(V1) { 
+  autoMode = param.asInt(); 
+  if (autoMode == 1) {
+    pumpState = 0; 
+    currentCycle = 0;
+    Blynk.virtualWrite(PUMP_ERROR_VPIN, 0); 
+    Serial.println("[System] Da reset trang thai bom, bat dau theo doi lai.");
+  }
+}
 void setup() {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(PIR_PIN, INPUT);
   digitalWrite(RELAY_PIN, LOW);
   dht.begin();
-  
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
-
-  // Gọi API thời tiết lần đầu
   fetchWeatherForecast();
-
-  // SET UP 4 TIMERS HOẠT ĐỘNG SONG SONG
   timer.setInterval(2000L, readSensorsAndDebug);
   timer.setInterval(2000L, handleAutoMode);     
-  timer.setInterval(2000L, sendSoiltoBlynk); 
+  timer.setInterval(2000L, sendSoilandPirtoBlynk); 
   timer.setInterval(300000L, sendToBlynk);
   timer.setInterval(1800000L, fetchWeatherForecast);
 }
