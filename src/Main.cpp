@@ -24,7 +24,6 @@ const String countryCode = "...";
 #define PUMP_ERROR_VPIN V7
 #define DHTTYPE DHT11
 DHT dht(DHT_PIN, DHTTYPE);
-BlynkTimer timer;
 
 //BIẾN TOÀN CỤC
 float t = 0.0, h = 0.0;
