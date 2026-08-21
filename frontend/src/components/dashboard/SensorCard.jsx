@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function SensorCard({ type, value, status, trend, targetText, isHighlight }) {
+export default function SensorCard({ type, value, status, trend, targetText, isHighlight, triggerVal, targetVal }) {
   const configs = {
     temp: {
       title: 'Air Temp',
@@ -32,13 +32,13 @@ export default function SensorCard({ type, value, status, trend, targetText, isH
       renderExtra: () => (
         <span
           className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${
-            value < 45 ? 'text-error bg-error-container' : 'text-primary bg-primary-container/20'
+            value < (triggerVal || 40) ? 'text-error bg-error-container' : 'text-primary bg-primary-container/20'
           }`}
         >
           <span className="material-symbols-outlined text-[14px]">
-            {value < 45 ? 'warning' : 'check'}
+            {value < (triggerVal || 40) ? 'warning' : 'check'}
           </span>{' '}
-          {value < 45 ? 'Low' : 'Optimal'}
+          {value < (triggerVal || 40) ? 'Cần tưới' : 'Đủ ẩm'}
         </span>
       )
     },
@@ -59,7 +59,7 @@ export default function SensorCard({ type, value, status, trend, targetText, isH
 
   return (
     <div
-      className={`bg-surface-container-lowest rounded-xl p-5 ambient-shadow card-hover border transition-all flex flex-col justify-between h-[160px] ${
+      className={`bg-surface-container-lowest rounded-xl p-5 ambient-shadow card-hover border transition-all flex flex-col justify-between min-h-[160px] ${
         isHighlight ? 'border-primary/20' : 'border-transparent'
       }`}
     >
@@ -86,12 +86,16 @@ export default function SensorCard({ type, value, status, trend, targetText, isH
           </div>
         )}
 
-        {targetText && (
-          <div
-            className={`text-xs mt-1 font-medium ${
-              type === 'soil' && value < 45 ? 'text-error font-semibold' : 'text-on-surface-variant'
-            }`}
-          >
+        {/* HIỂN THỊ NGƯỠNG TƯỚI THỰC TẾ TRÊN CARD ĐẤT */}
+        {type === 'soil' && triggerVal !== undefined && (
+          <div className="mt-2 text-[11px] font-medium bg-surface-container-low px-2 py-1 rounded border border-outline-variant/30 flex justify-between text-on-surface-variant">
+            <span>Bật khi: <strong className="text-error">&lt;{triggerVal}%</strong></span>
+            <span>Ngắt khi: <strong className="text-primary">&ge;{targetVal}%</strong></span>
+          </div>
+        )}
+
+        {targetText && type !== 'soil' && (
+          <div className="text-xs mt-1 font-medium text-on-surface-variant">
             {targetText}
           </div>
         )}

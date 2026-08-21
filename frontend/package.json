@@ -9,7 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^2.18.0",
     "chart.js": "^4.4.2",
+    "firebase": "^12.18.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

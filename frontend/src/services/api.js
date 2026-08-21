@@ -1,5 +1,12 @@
-const hostname = window.location.hostname || 'localhost';
-const API_BASE = `http://${hostname}:8000`;
+// Link backend online vừa deploy trên Render
+const PRODUCTION_BACKEND = "https://agrologic.onrender.com"; 
+
+const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+
+const API_BASE = isLocalhost ? `http://${window.location.hostname}:8000` : PRODUCTION_BACKEND;
+const WS_BASE = isLocalhost 
+  ? `ws://${window.location.hostname}:8000/ws` 
+  : PRODUCTION_BACKEND.replace("https://", "wss://").replace("http://", "ws://") + "/ws";
 
 export const api = {
   getSettings: async () => {
@@ -35,9 +42,7 @@ export const api = {
     return res.json();
   },
   connectWebSocket: (onMessage) => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${hostname}:8000/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(WS_BASE);
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
