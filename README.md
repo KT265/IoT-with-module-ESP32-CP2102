@@ -1,112 +1,88 @@
-# IoT-with-module-ESP32-CP2102-Topic-Application-of-IoT-in-breeding-and-managing-natural-enemies
-🌱 Smart Farm V2 Pro Max: Nông Nghiệp Sinh Thái & Quản Lý Thiên Địch
+# 🌱 AgroLogic: Smart Farming & Ecological Microclimate Management with AI
 
-📌 Giới thiệu dự án (Project Overview)
+[![Firebase](https://img.shields.io/badge/Firebase-Realtime%20Database%20%7C%20Auth%20%7C%20Hosting-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![ESP32](https://img.shields.io/badge/ESP32-Arduino%20Framework-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/)
+[![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite%20%2B%20TailwindCSS-61DAFB?logo=react&logoColor=black)](https://reactjs.org/)
+[![Gemini AI](https://img.shields.io/badge/AI%20Engine-Google%20Gemini%203.6%20Flash-4285F4?logo=google&logoColor=white)](https://aistudio.google.com/)
 
-Bạn quá mệt mỏi với việc hệ thống tưới tự động cứ "mù quáng" xả nước dù trời đang mưa ngập mặt? Bạn muốn bảo vệ những chú bọ rùa ("thiên địch") khỏi cái nóng cháy da thịt?
+> **Hệ sinh thái Nông nghiệp Thông minh & Quản lý Vi khí hậu Tự động** kết hợp giữa IoT Phần cứng (ESP32), Cơ sở dữ liệu đám mây thời gian thực (Serverless Firebase) và Trí tuệ nhân tạo (Google Gemini AI) để tối ưu hóa chu trình tưới tiêu, dự báo dịch bệnh nông học và bảo vệ môi trường sinh thái.
 
-Dự án "Ứng dụng IoT trong ươm trồng và quản lý thiên địch" không chỉ là một chiếc công tắc hẹn giờ rẻ tiền. Đây là một hệ thống khép kín biết "suy nghĩ" với:
+---
 
-Khả năng gọi API dự báo thời tiết để từ chối tưới khi trời sắp mưa.
+## 📌 1. Điểm nổi bật của dự án (Key Features)
 
-Cơ chế bơm nhấp nhả (Pulse Pumping) và Fail-safe tự động khóa động cơ khi cạn bồn nước.
+- **⚡ Kiến trúc Serverless 100% (0đ chi phí vận hành):** Loại bỏ hoàn toàn máy chủ trung gian. Dữ liệu truyền trực tiếp giữa ESP32 $\leftrightarrow$ Firebase Realtime Database $\leftrightarrow$ Web App với độ trễ dưới 100ms.
+- **🔐 Đa người dùng & Phân quyền bảo mật (Multi-tenant Security):**
+  - Đăng nhập 1 chạm bằng **Google Authentication**.
+  - **Firebase Security Rules** bảo vệ độc lập: Người dùng chỉ xem/sửa được dữ liệu của chính mình.
+  - **Chế độ Khách (Guest View 1 chạm):** Cho phép chia sẻ đường link (`?view=UID`) để bạn bè xem thời gian thực thông số cảm biến và thời tiết mà không sợ lộ API Key hay bị can thiệp vào máy bơm.
+- **🧠 Bộ não AI Nông nghiệp (Google Gemini AI Engine):**
+  - Tự động phân tích đa chiều: *Thông số cảm biến thực tế + Hồ sơ cây trồng (loại cây, giai đoạn sinh trưởng) + Dự báo thời tiết 5-7 ngày tới*.
+  - Tự động phát hiện rủi ro dịch bệnh (sương mai, bọ trĩ, thán thư...) và đề xuất cách chăm sóc sinh học.
+  - **Tự động đẩy ngưỡng tưới thông minh (Dynamic Trigger/Target)** xuống chip ESP32.
+- **🛡️ Cơ chế Bơm nhấp nhả (Pulse Pumping) & Khóa an toàn phần cứng (Fail-safe):**
+  - Bơm 5 giây $\rightarrow$ Nghỉ 5 giây chờ nước ngấm $\rightarrow$ Đo lại cảm biến.
+  - Tự động ngắt và khóa động cơ vĩnh viễn sau 5 chu kỳ nếu đất không ẩm (chống cháy bơm khi cạn nước hoặc đứt ống).
+- **📶 Cấu hình Wi-Fi & Bắt cặp thiết bị tiện lợi (Captive Portal WiFiManager):**
+  - Cắm nguồn ESP32 $\rightarrow$ Kết nối Wi-Fi cấu hình `SmartFarm_Setup` $\rightarrow$ Nhập mật khẩu Wi-Fi và dán mã **User UID** $\rightarrow$ Tự động lưu vào bộ nhớ Flash (NVS Preferences).
 
-Tính năng Trọng số môi trường, tự động tăng cường tưới để bù đắp bốc hơi khi trời quá nóng.
+---
 
-🛠 Vũ khí phần cứng (Hardware Modules)
+## 🛠️ 2. Quy hoạch phần cứng (Hardware Pinout)
 
-Hệ thống sử dụng linh kiện phổ thông nhưng được quy hoạch chân tín hiệu (Pin Mapping) cực kỳ khắt khe:
+| Linh kiện | Chân cắm ESP32 | Chức năng |
+| :--- | :--- | :--- |
+| **DHT11** | `GPIO 15` | Đo nhiệt độ & độ ẩm không khí |
+| **Cảm biến Độ ẩm đất (Capacitive/Resistive)** | `GPIO 32` (ADC1) | Đo lượng nước trong giá thể trồng |
+| **Quang trở (LDR Module)** | `GPIO 34` (ADC1) | Đo cường độ ánh sáng (Nắng gắt / Râm mát) |
+| **Cảm biến PIR (HC-SR501)** | `GPIO 25` | Phát hiện chuyển động (Xâm nhập khu vực thiên địch) |
+| **Relay 5V + Bơm mini** | `GPIO 26` | Đóng/ngắt máy bơm tưới tiêu |
+| **Mạch Buck LM2596** | Cấp nguồn 5V/3A | Ổn định nguồn điện, chống sụt áp khi khởi động bơm |
 
-Vi điều khiển ESP32 (38-pin): Bộ não lõi kép xử lý đa luồng, tích hợp Wi-Fi.
+---
 
-DHT11: Đo nhiệt độ & độ ẩm không khí (Tính toán mức độ bốc hơi).
+## 🏗️ 3. Sơ đồ luồng dữ liệu (Architecture Diagram)
 
-Quang trở (LDR): Đo cường độ ánh sáng (Cắm vào chân ADC1 để chống nhiễu Wi-Fi).
+```text
+       ┌─────────────────────────────────────────────────────────┐
+       │                FIREBASE CLOUD INFRASTRUCTURE            │
+       │  - Authentication: Google Sign-in & Anonymous Auth      │
+       │  - Realtime Database: /users/{UID}/[telemetry, control] │
+       │  - Hosting: Web App Client-side                         │
+       └─────────────────────────┬───────────────────────────────┘
+                                 ▲
+            ┌────────────────────┴────────────────────┐
+            │                                         │
+ [Realtime Stream & Telemetry]             [Google SDK / Client REST]
+            │                                         │
+            ▼                                         ▼
+┌──────────────────────────────┐          ┌──────────────────────────────┐
+│        ESP32 HARDWARE        │          │       REACT WEB DASHBOARD    │
+│ - WiFiManager + NVS Flash    │          │ - AgroLogic Design System    │
+│ - Pulse Pumping & Fail-safe  │          │ - Gemini 3.6 Flash Engine    │
+│ - Sensors: DHT, Soil, LDR    │          │ - OpenWeatherMap 7-Day Sync  │
+│ - Anonymous Auth Session     │          │ - 1-Click Guest Share Link   │
+└──────────────────────────────┘          └──────────────────────────────┘
 
-Cảm biến độ ẩm đất: Đo lượng nước trong giá thể (Kích hoạt tưới).
-
-Cảm biến chuyển động PIR (HC-SR501): Phát hiện xâm nhập, chim chuột phá hoại khu vực của thiên địch.
-
-Module Relay 5V & Bơm chìm mini: Cơ cấu chấp hành.
-
-Mạch hạ áp Buck LM2596: Đảm bảo nguồn 5V/3A ổn định, chống hiện tượng sụt áp (Panic Reset) khi bơm khởi động.
-
-💻 Công cụ & Nền tảng (Software Stack)
-
-Môi trường lập trình: PlatformIO trên Visual Studio Code (Tối ưu C/C++, quản lý thư viện tự động).
-
-Đám mây (Cloud IoT): Blynk IoT (Giao tiếp qua Virtual Pins).
-
-API Khí tượng: OpenWeatherMap API (Dự báo thời tiết 3-6 giờ tới).
-
-Thư viện chính: BlynkSimpleEsp32, ArduinoJson v7, DHT sensor library.
-
-🧠 Luồng Logic cốt lõi (The Core Logic)
-
-Hệ thống loại bỏ hoàn toàn hàm delay() gây treo máy, sử dụng kiến trúc Đa luồng giả lập (Timer Interrupts):
-
-Weather Risk Assessment (Mỗi 30 phút): Gọi API OpenWeatherMap. Nếu 6 giờ tới có "Rain", "Thunderstorm", bật cờ khóa bơm tự động.
-
-Environmental Priority (Mỗi 2 giây):
-Nếu nhiệt độ > 32°C, độ ẩm khí < 50% và nắng gắt -> Tự động đẩy ngưỡng bắt đầu tưới từ 40% lên 55% để cứu cây và làm mát vi khí hậu cho thiên địch.
-
-Pulse Pumping & Fail-safe (Máy trạng thái):
-
-Tưới 5 giây -> Nghỉ 5 giây chờ nước thẩm thấu -> Đọc lại cảm biến.
-
-Nếu lặp lại quá 5 chu kỳ (25 giây) mà đất không ẩm lên -> Đứt ống hoặc cạn nước -> Kích hoạt State 3 (Lỗi), khóa Relay vĩnh viễn và đẩy Push Notification về app.
-
-🚀 Hướng dẫn cài đặt & Sử dụng (How to Run)
-
-Bước 1: Chuẩn bị môi trường
-
-Cài đặt Visual Studio Code và Extension PlatformIO IDE.
-
-Clone repository này về máy
-
-Mở thư mục project bằng VS Code. PlatformIO sẽ tự động tải các thư viện khai báo trong platformio.ini.
-
-Bước 2: Cấu hình Đám mây & API
-
-Đăng ký tài khoản OpenWeatherMap, lấy API_KEY.
-
-Đăng ký tài khoản Blynk IoT, tạo một Device mới và lấy BLYNK_TEMPLATE_ID, BLYNK_TEMPLATE_NAME, BLYNK_AUTH_TOKEN.
-
-Mở file src/main.cpp và thay thế các thông tin bí mật của bạn:
-
-#define BLYNK_TEMPLATE_ID   "TMPLxxxxxx"
-#define BLYNK_AUTH_TOKEN    "Your_Blynk_Token"
-char ssid[] = "Your_WiFi_Name";
-char pass[] = "Your_WiFi_Password";
-const String weatherApiKey = "Your_OWM_API_Key";
-
-
-Bước 3: Cấu hình Blynk Datastreams
-
-Tạo các Virtual Pins trên Web Dashboard của Blynk:
-
-V0 (Integer): Điều khiển Relay (Bơm).
-
-V1 (Integer): Chuyển chế độ Auto/Manual.
-
-V2, V3 (Double): Nhiệt độ, Độ ẩm không khí.
-
-V4 (Integer): Độ ẩm đất (%).
-
-V5, V6 (Integer): Ánh sáng (0/1), PIR (0/1).
-
-V7 (Integer): Cờ báo lỗi bơm (Fail-safe).
-
-Bước 4: Biên dịch và Nạp Code
-
-Kết nối mạch ESP32 với máy tính.
-
-Nhấn nút Build (dấu tick 🗸) ở thanh trạng thái dưới cùng của PlatformIO để biên dịch.
-
-Nhấn nút Upload (mũi tên ➔) để nạp code vào ESP32.
-
-Mở Serial Monitor (baud rate 115200) để quan sát luồng debug.
-
-💡 Tips: Nếu tải về bị lỗi thư viện gạch chân đỏ, hãy nhấn icon Thùng rác (Clean) dưới thanh trạng thái, sau đó Build lại từ đầu.
-
-Chúc các bạn xây dựng thành công một hệ sinh thái nông nghiệp thông minh!
+---
+## 📂 4. Cấu trúc thư mục dự án (Project Structure)
+---
+├── src/
+│   └── main.cpp                  # Firmware ESP32 (Firebase RTDB + WiFiManager)
+├── platformio.ini                # Cấu hình nạp code & thư viện PlatformIO
+├── frontend/
+│   ├── index.html                # Single Page Entrypoint
+│   ├── package.json              # Quản lý thư viện React, Vite, Firebase
+│   ├── vite.config.js            # Cấu hình Vite Build Tool
+│   ├── tailwind.config.js        # Cấu hình Theme màu AgroLogic
+│   ├── firebase.json             # Cấu hình Firebase Hosting
+│   └── src/
+│       ├── App.jsx               # Component trung tâm quản lý State & Route
+│       ├── services/
+│       │   └── firebase.js       # Khởi tạo Firebase SDK & Database Service
+│       └── components/
+│           ├── layout/           # Header, Sidebar, AuthModal, Toast
+│           ├── dashboard/        # SensorCard, AiControlCard, PumpStationCard
+│           ├── analytics/        # MetricChart (Chart.js), ForecastTable
+│           └── settings/         # ConnectionSettings, FarmProfileSettings
+└── README.md

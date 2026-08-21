@@ -1,25 +1,24 @@
 #include <WiFi.h>
-#include <WiFiManager.h> // Bắt buộc phải cài thêm thư viện này nhé thg bạn!
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
+#include <WiFiManager.h>
+#include <Preferences.h>
+#include <Firebase_ESP_Client.h>
 #include <DHT.h>
 
-// Bỏ đoạn hardcode SSID và PASS đi.
+// =========================================================================
+// 1. CẤU HÌNH THÔNG TIN DỰ ÁN FIREBASE
+// =========================================================================
+#define DATABASE_URL    "https://project-grologic-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define FIREBASE_API_KEY "AIzaSyB6hc9HPtui7GST-GWSaRcQp-N09m9Cp10" // Lấy ở mục Service accounts -> Database secrets
 
-// Có thể dùng broker miễn phí công cộng hoặc HiveMQ Serverless của bạn
-const char* mqtt_server = "broker.hivemq.com"; 
-const int   mqtt_port   = 1883;
+// Khởi tạo bộ nhớ lưu trữ Flash của ESP32
+Preferences preferences;
+char user_uid[64] = ""; // Biến lưu UID người dùng nhập từ WiFiManager
 
-// DEVICE ID DUY NHẤT CHO MỖI NGƯỜI DÙNG
-String device_id; 
-
-// Dynamic Topics
-String telemetryTopic;
-String controlTopic;
-String alertTopic;
-
-WiFiClient espClient;
-PubSubClient client(espClient);
+// Cấu hình Firebase
+FirebaseData fbdo;
+FirebaseData streamData;
+FirebaseAuth auth;
+FirebaseConfig fbConfig;
 
 // HARDWARE PINS
 #define RELAY_PIN   26  
@@ -50,43 +49,69 @@ const int ABSORB_TIME_MS = 5000;
 unsigned long lastTelemetrySend = 0;
 unsigned long lastDebugPrint = 0;
 
-// XỬ LÝ NHẬN LỆNH TỪ AI TOOL (NGƯỠNG TƯỚI HOẶC BẬT TẮT THỦ CÔNG)
-void callback(char* topic, byte* payload, unsigned int length) {
-  JsonDocument doc;
-  deserializeJson(doc, payload, length);
+// LẮNG NGHE LỆNH REALTIME TỪ WEB QUA FIREBASE STREAM
+void streamCallback(FirebaseStream data) {
+  String path = data.dataPath();
+  String type = data.dataType();
 
-  if (doc.containsKey("mode")) {
-    autoMode = (doc["mode"] == "auto") ? 1 : 0;
-  }
-  
-  if (doc.containsKey("trigger")) {
-    triggerThreshold = doc["trigger"];
-    Serial.printf("[MQTT] Cap nhat nguong Trigger: %d%%\n", triggerThreshold);
-  }
+  // Trường hợp 1: Web gửi cả cụm JSON (khi AI cập nhật hoặc đổi mode)
+  if (type == "json") {
+    FirebaseJson &json = data.jsonObject();
+    FirebaseJsonData result;
 
-  if (doc.containsKey("target")) {
-    targetThreshold = doc["target"];
-    Serial.printf("[MQTT] Cap nhat nguong Target: %d%%\n", targetThreshold);
-  }
-
-  if (autoMode == 0 && doc.containsKey("manual_relay")) {
-    int relayCmd = doc["manual_relay"];
-    digitalWrite(RELAY_PIN, relayCmd ? HIGH : LOW);
-    Serial.printf("[Manual] Dieu khien Relay: %d\n", relayCmd);
+    if (json.get(result, "mode")) {
+      autoMode = (result.stringValue == "auto") ? 1 : 0;
+      if (autoMode == 1) pumpState = 0; // Reset trạng thái khi về Auto
+      Serial.printf("👉 [Firebase] Chuyen Mode: %s\n", autoMode ? "AUTO" : "MANUAL");
+    }
+    if (json.get(result, "trigger")) {
+      triggerThreshold = result.intValue;
+      Serial.printf("🎯 [Firebase] Nguong Trigger moi: %d%%\n", triggerThreshold);
+    }
+    if (json.get(result, "target")) {
+      targetThreshold = result.intValue;
+      Serial.printf("🎯 [Firebase] Nguong Target moi: %d%%\n", targetThreshold);
+    }
+    if (json.get(result, "manual_relay")) {
+      if (autoMode == 0) {
+        int rCmd = result.intValue;
+        digitalWrite(RELAY_PIN, rCmd ? HIGH : LOW);
+        pumpState = rCmd ? 1 : 0;
+        Serial.printf("⚡ [Firebase Manual] Relay: %s\n", rCmd ? "BAT (ON)" : "TAT (OFF)");
+      }
+    }
+  } 
+  // Trường hợp 2: Web cập nhật từng biến đơn lẻ
+  else {
+    if (path == "/mode") {
+      autoMode = (data.stringData() == "auto") ? 1 : 0;
+      if (autoMode == 1) pumpState = 0;
+      Serial.printf("👉 [Firebase] Chuyen Mode: %s\n", autoMode ? "AUTO" : "MANUAL");
+    } else if (path == "/trigger") {
+      triggerThreshold = data.intData();
+      Serial.printf("🎯 [Firebase] Nguong Trigger moi: %d%%\n", triggerThreshold);
+    } else if (path == "/target") {
+      targetThreshold = data.intData();
+      Serial.printf("🎯 [Firebase] Nguong Target moi: %d%%\n", targetThreshold);
+    } else if (path == "/manual_relay") {
+      if (autoMode == 0) {
+        int rCmd = data.intData();
+        digitalWrite(RELAY_PIN, rCmd ? HIGH : LOW);
+        pumpState = rCmd ? 1 : 0;
+        Serial.printf("⚡ [Firebase Manual] Relay: %s\n", rCmd ? "BAT (ON)" : "TAT (OFF)");
+      }
+    }
   }
 }
 
-void reconnectMQTT() {
-  while (!client.connected()) {
-    Serial.print("[MQTT] Dang ket noi...");
-    if (client.connect(device_id.c_str())) {
-      Serial.println(" Thanh cong!");
-      client.subscribe(controlTopic.c_str());
-    } else {
-      Serial.printf(" That bai, rc=%d. Thu lai sau 3s\n", client.state());
-      delay(3000);
-    }
-  }
+void streamTimeoutCallback(bool timeout) {
+  if (timeout) Serial.println("[Firebase Stream] Stream timeout, dang khoi phuc...");
+}
+
+// Cờ báo hiệu có lưu cấu hình mới từ WiFiManager
+bool shouldSaveConfig = false;
+void saveConfigCallback() {
+  shouldSaveConfig = true;
 }
 
 void setup() {
@@ -96,49 +121,72 @@ void setup() {
   digitalWrite(RELAY_PIN, LOW);
   dht.begin();
 
-  // wm.resetSettings(); // Bỏ comment dòng này nếu muốn xóa mật khẩu WiFi đã lưu để test lại
-  // 1. Bật WiFi ở chế độ trạm (STA) tạm để lấy địa chỉ MAC cứng của chip
-  WiFi.mode(WIFI_STA); 
-  device_id = "farm_" + WiFi.macAddress();
-  device_id.replace(":", ""); // Xóa dấu hai chấm
+  // 1. Đọc User UID đã lưu từ bộ nhớ Flash
+  preferences.begin("smartfarm", false);
+  String saved_uid = preferences.getString("uid", "");
+  saved_uid.toCharArray(user_uid, 64);
+  Serial.println("[Flash] User UID hien tai: " + String(user_uid));
 
   // 2. Khởi tạo WiFiManager
   WiFiManager wm;
-  
-  // 3. Trick lỏ: Tạo một đoạn HTML in đậm cái Device ID ra
-  String htmlSnippet = "<br/><hr/><h2 style=\"color:red;\">MÃ THIẾT BỊ:</h2><h3>" + device_id + "</h3><p>Hãy copy mã này nhập vào Web Tool</p><hr/>";
-  WiFiManagerParameter custom_text(htmlSnippet.c_str());
-  
-  // Add cái dòng chữ đó vào giao diện WiFiManager
-  wm.addParameter(&custom_text);
+  wm.setSaveConfigCallback(saveConfigCallback);
 
-  // 4. Bung lụa WiFi Setup
+  // Tạo ô nhập User UID trên giao diện Web WiFiManager
+  WiFiManagerParameter custom_uid_input("uid", "Nhap User UID tu Web Dashboard", user_uid, 64);
+  wm.addParameter(&custom_uid_input);
+
+  // Giao diện hướng dẫn HTML
+  String htmlSnippet = "<br/><hr/><p style=\"color:green;font-weight:bold;\">Huong dan:</p><p>Dang nhap Google tren Web -> Copy ma <b>User UID</b> va dan vao o ben tren.</p><hr/>";
+  WiFiManagerParameter custom_html(htmlSnippet.c_str());
+  wm.addParameter(&custom_html);
+
+  // 3. Mở cổng phát Wi-Fi AP để người dùng cài đặt
+  Serial.println("[WiFi] Dang khoi chay WiFi Setup Portal...");
   bool res = wm.autoConnect("SmartFarm_Setup");
 
-  if(!res) {
-    Serial.println("[WiFi] Ket noi THAT BAI! Mạch sẽ khởi động lại...");
+  if (!res) {
+    Serial.println("[WiFi] Ket noi that bai! Khoi dong lai ESP32...");
     delay(3000);
-    ESP.restart(); // Reset nếu treo quá lâu
-  } 
+    ESP.restart();
+  }
+
+  // 4. Nếu người dùng nhập UID mới, lưu ngay vào Flash
+  if (shouldSaveConfig) {
+    strcpy(user_uid, custom_uid_input.getValue());
+    preferences.putString("uid", String(user_uid));
+    Serial.println("[Flash] Da luu User UID moi: " + String(user_uid));
+  }
+  preferences.end();
 
   Serial.println("\n[WiFi] Da ket noi thanh cong! IP: " + WiFi.localIP().toString());
-
-  // Lấy MAC và tạo Device ID (Để ở đây an toàn hơn vì WiFi đã chạy)
-  device_id = "farm_" + WiFi.macAddress();
-  device_id.replace(":", ""); // Xóa dấu : trong MAC
-  
-  // Khởi tạo topic động theo Device ID
-  telemetryTopic = "farm/" + device_id + "/telemetry";
-  controlTopic   = "farm/" + device_id + "/control";
-  alertTopic     = "farm/" + device_id + "/alert";
-
   Serial.println("=========================================");
-  Serial.println("DEVICE ID CUA BAN: " + device_id);
-  Serial.println("Nhap ID nay vao AI Web Tool de ket noi!");
+  Serial.println("DEVICE HOAT DONG VOI USER UID: " + String(user_uid));
   Serial.println("=========================================");
 
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
+  // 5. Kết nối Firebase Realtime Database
+  fbConfig.api_key = FIREBASE_API_KEY;
+  fbConfig.database_url = DATABASE_URL;
+
+  // Kích hoạt đăng nhập ẩn danh cho ESP32
+  if (Firebase.signUp(&fbConfig, &auth, "", "")) {
+    Serial.println("[Firebase] Dang ky phien xac thuc an danh thanh cong!");
+  } else {
+    Serial.printf("[Firebase] Loi dang ky phien: %s\n", fbConfig.signer.signupError.message.c_str());
+  }
+
+  Firebase.begin(&fbConfig, &auth);
+  Firebase.reconnectWiFi(true);
+
+  // 6. Bật Stream lắng nghe sự kiện điều khiển của User
+  if (strlen(user_uid) > 0) {
+    String controlPath = "/users/" + String(user_uid) + "/control";
+    if (Firebase.RTDB.beginStream(&streamData, controlPath.c_str())) {
+      Firebase.RTDB.setStreamCallback(&streamData, streamCallback, streamTimeoutCallback);
+      Serial.println("[Firebase] Stream control khoi tao tai: " + controlPath);
+    }
+  } else {
+    Serial.println("⚠️ CANH BAO: Chua co User UID! Vui long ket noi vao Wi-Fi SmartFarm_Setup de nhap.");
+  }
 }
 
 void readSensors() {
@@ -189,7 +237,9 @@ void handlePumpLogic() {
         pumpState = 0; currentCycle = 0;
       } else if (currentCycle >= MAX_CYCLES) {
         pumpState = 3; // Báo lỗi kẹt bơm/hết nước
-        client.publish(alertTopic.c_str(), "{\"error\": \"FAIL_SAFE_TRIGGERED\"}");
+        if (strlen(user_uid) > 0) {
+          Firebase.RTDB.setString(&fbdo, ("/users/" + String(user_uid) + "/alert/error").c_str(), "FAIL_SAFE_TRIGGERED");
+        }
       } else {
         pumpState = 1;
         currentCycle++;
@@ -201,25 +251,27 @@ void handlePumpLogic() {
 }
 
 void sendTelemetry() {
-  JsonDocument doc;
-  doc["temp"] = t;
-  doc["humid"] = h;
-  doc["soil"] = soilPercent;
-  doc["light"] = (ldrValue < 2000) ? 1 : 0;
-  doc["pir"] = pirValue;
-  doc["pump"] = (pumpState == 1) ? 1 : 0;
-  doc["pump_state"] = pumpState;
-  doc["auto_mode"] = autoMode;
+  if (strlen(user_uid) == 0 || !Firebase.ready()) return;
 
-  char buffer[256];
-  serializeJson(doc, buffer);
-  client.publish(telemetryTopic.c_str(), buffer);
+  FirebaseJson json;
+  json.set("temp", t);
+  json.set("humid", h);
+  json.set("soil", soilPercent);
+  json.set("light", (ldrValue < 2000) ? 1 : 0);
+  json.set("pir", pirValue);
+  json.set("pump", (pumpState == 1 || digitalRead(RELAY_PIN) == HIGH) ? 1 : 0);
+  json.set("pump_state", pumpState);
+  json.set("auto_mode", autoMode);
+  
+  // Gửi 2 giá trị ngưỡng thực tế trong RAM chip lên để Web hiển thị
+  json.set("trigger", triggerThreshold);
+  json.set("target", targetThreshold);
+
+  String telePath = "/users/" + String(user_uid) + "/telemetry";
+  Firebase.RTDB.updateNode(&fbdo, telePath.c_str(), &json);
 }
 
 void loop() {
-  if (!client.connected()) reconnectMQTT();
-  client.loop();
-
   readSensors();
   handlePumpLogic();
 
@@ -229,7 +281,7 @@ void loop() {
                   t, h, soilPercent, ldrValue, pirValue, pumpState, autoMode);
   }
 
-  // Gửi Telemetry mỗi 2 giây
+  // Đẩy Telemetry lên Firebase mỗi 2 giây
   if (millis() - lastTelemetrySend >= 2000) {
     lastTelemetrySend = millis();
     sendTelemetry();

@@ -4,3 +4,4 @@
 .vscode/launch.json
 .vscode/ipch
 frontend/node_modules/
+frontend/dist/
