@@ -14,9 +14,9 @@ export default function MetricChart({ title, value, trend, icon, color, dataPoin
     gradient.addColorStop(0, `${color}33`);
     gradient.addColorStop(1, `${color}00`);
 
-    // Nếu chưa có dữ liệu 5 phút nào trong ngày, tạo mảng rỗng để vẽ trục
-    const chartLabels = (labels && labels.length > 0) ? labels : ['00:00'];
-    const chartData = (dataPoints && dataPoints.length > 0) ? dataPoints : [0];
+    const hasData = dataPoints && dataPoints.length > 0;
+    const chartLabels = hasData ? labels : ['00:00'];
+    const chartData = hasData ? dataPoints : [0];
 
     chartInstance.current = new Chart(ctx, {
       type: 'line',
@@ -30,8 +30,9 @@ export default function MetricChart({ title, value, trend, icon, color, dataPoin
             fill: true,
             tension: 0.35,
             borderWidth: 2.5,
-            pointRadius: chartData.length > 30 ? 0 : 2, // Ẩn chấm tròn khi điểm dày để mượt
-            pointHoverRadius: 5
+            pointRadius: chartData.length > 30 ? 0 : 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: color
           }
         ]
       },
@@ -41,8 +42,11 @@ export default function MetricChart({ title, value, trend, icon, color, dataPoin
         plugins: {
           legend: { display: false },
           tooltip: {
+            backgroundColor: '#161a32',
+            padding: 10,
+            cornerRadius: 8,
             callbacks: {
-              label: (item) => ` ${item.raw} ${unit || ''}`
+              label: (item) => ` ${title}: ${item.raw} ${unit || ''}`
             }
           }
         },
@@ -50,14 +54,19 @@ export default function MetricChart({ title, value, trend, icon, color, dataPoin
           x: {
             grid: { display: false },
             ticks: {
-              maxTicksLimit: 8, // Giới hạn mốc giờ hiển thị để không đè chữ nhau
+              maxTicksLimit: 6,
               font: { size: 10, family: 'Inter' },
               color: '#707973'
             }
           },
           y: {
-            display: false,
-            suggestedMin: 0
+            display: true,
+            grid: { color: 'rgba(0, 0, 0, 0.04)' },
+            ticks: {
+              font: { size: 10, family: 'Inter' },
+              color: '#707973',
+              callback: (val) => `${val}${unit || ''}`
+            }
           }
         }
       }
@@ -66,7 +75,7 @@ export default function MetricChart({ title, value, trend, icon, color, dataPoin
     return () => {
       if (chartInstance.current) chartInstance.current.destroy();
     };
-  }, [dataPoints, labels, color, unit]);
+  }, [dataPoints, labels, color, unit, title]);
 
   return (
     <div className="bg-surface rounded-xl ambient-shadow p-5 flex flex-col border border-transparent hover:border-primary/20 transition-all">
